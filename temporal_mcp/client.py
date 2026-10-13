@@ -1,10 +1,12 @@
 """Temporal client management and connection handling."""
 
 import asyncio
+import os
 import sys
 from typing import Optional, Sequence
 
 from temporalio.client import Client, TLSConfig
+from temporalio.service import HttpConnectProxyConfig
 
 
 class TemporalClientManager:
@@ -69,6 +71,7 @@ class TemporalClientManager:
                     namespace=self.namespace,
                     tls=tls_config,
                     api_key=self.api_key if self.api_key else None,
+                    http_connect_proxy_config=self._http_connect_proxy_config(),
                 )
                 print(f"Successfully connected to Temporal at {self.temporal_host}", file=sys.stderr)
             except Exception as e:
@@ -177,29 +180,61 @@ class TemporalClientManager:
             TLS configuration or None
         """
         client_cert, client_key = self._load_client_certs()
+        root_ca = self._server_root_ca_cert()
 
         # If mTLS certs are provided, always enable TLS regardless of other settings
         if client_cert and client_key:
             return TLSConfig(
                 client_cert=client_cert,
                 client_private_key=client_key,
+                server_root_ca_cert=root_ca,
             )
 
         # API key auth requires TLS
         if self.api_key:
-            return TLSConfig()
+            return TLSConfig(server_root_ca_cert=root_ca)
 
         # Priority: explicit tls_enabled setting > auto-detect from hostname
         if self.tls_enabled is True:
-            return TLSConfig()
+            return TLSConfig(server_root_ca_cert=root_ca)
         elif self.tls_enabled is False:
             return None
         elif self._is_remote_host():
             # Auto-detect: enable TLS for remote connections
-            return TLSConfig()
+            return TLSConfig(server_root_ca_cert=root_ca)
         else:
             # Auto-detect: disable TLS for local connections
             return None
+
+    @staticmethod
+    def _http_connect_proxy_config() -> Optional[HttpConnectProxyConfig]:
+        """HTTP CONNECT proxy from TEMPORAL_HTTP_CONNECT_PROXY (host:port, or
+        http://host:port).
+
+        The Temporal SDK's core ignores the conventional proxy environment
+        variables (HTTPS_PROXY), so an egress proxy must be named explicitly.
+        Unset or empty means a direct connection, as before.
+        """
+        target = os.environ.get("TEMPORAL_HTTP_CONNECT_PROXY", "").strip()
+        if not target:
+            return None
+        if target.startswith("http://"):
+            target = target[len("http://") :]
+        return HttpConnectProxyConfig(target_host=target.rstrip("/"))
+
+    @staticmethod
+    def _server_root_ca_cert() -> Optional[bytes]:
+        """Root CA bundle from TEMPORAL_TLS_SERVER_ROOT_CA (a PEM file path).
+
+        For connections through a TLS-intercepting proxy whose CA the SDK's
+        default root store does not hold. Unset or empty keeps the default
+        roots.
+        """
+        path = os.environ.get("TEMPORAL_TLS_SERVER_ROOT_CA", "").strip()
+        if not path:
+            return None
+        with open(path, "rb") as f:
+            return f.read()
 
     def _is_remote_host(self) -> bool:
         """Check if the host is a remote (non-local) host.

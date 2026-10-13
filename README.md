@@ -124,6 +124,15 @@ Recommended when running from PyPI via [`uvx`](https://docs.astral.sh/uv/guides/
 | mTLS cert path | `--tls-cert` | `TEMPORAL_TLS_CLIENT_CERT_PATH` | — |
 | mTLS key path | `--tls-key` | `TEMPORAL_TLS_CLIENT_KEY_PATH` | — |
 | API key | `--api-key` | `TEMPORAL_API_KEY` | — |
+| HTTP CONNECT proxy | — | `TEMPORAL_HTTP_CONNECT_PROXY` | direct connection |
+| TLS root CA path | — | `TEMPORAL_TLS_SERVER_ROOT_CA` | SDK default roots |
+
+`TEMPORAL_HTTP_CONNECT_PROXY` (`host:port` or `http://host:port`) routes the
+gRPC connection through an HTTP CONNECT proxy — the Temporal SDK's core ignores
+the conventional `HTTPS_PROXY` variable, so the proxy must be named explicitly.
+`TEMPORAL_TLS_SERVER_ROOT_CA` points at a PEM bundle to verify the server
+certificate against, for a TLS-intercepting proxy whose CA the default root
+store does not hold.
 
 CLI arguments take precedence over environment variables. When `TEMPORAL_API_KEY` is set, TLS is enabled automatically. When mTLS cert/key paths are provided, TLS is also enabled automatically.
 

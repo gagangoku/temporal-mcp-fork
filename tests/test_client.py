@@ -293,3 +293,44 @@ class TestDisconnectAndEnsureConnected:
         mgr = TemporalClientManager()
         with pytest.raises(RuntimeError, match="Not connected"):
             mgr.ensure_connected()
+
+
+class TestHttpConnectProxy:
+    def test_unset_means_direct(self, monkeypatch):
+        monkeypatch.delenv("TEMPORAL_HTTP_CONNECT_PROXY", raising=False)
+        assert TemporalClientManager._http_connect_proxy_config() is None
+
+    def test_host_port(self, monkeypatch):
+        monkeypatch.setenv("TEMPORAL_HTTP_CONNECT_PROXY", "127.0.0.1:8080")
+        cfg = TemporalClientManager._http_connect_proxy_config()
+        assert cfg.target_host == "127.0.0.1:8080"
+
+    def test_url_form_is_normalized(self, monkeypatch):
+        monkeypatch.setenv("TEMPORAL_HTTP_CONNECT_PROXY", "http://127.0.0.1:8080/")
+        cfg = TemporalClientManager._http_connect_proxy_config()
+        assert cfg.target_host == "127.0.0.1:8080"
+
+    @pytest.mark.asyncio
+    async def test_connect_passes_proxy_config(self, monkeypatch):
+        monkeypatch.setenv("TEMPORAL_HTTP_CONNECT_PROXY", "127.0.0.1:8080")
+        mgr = TemporalClientManager()
+        with patch("temporal_mcp.client.Client.connect", return_value=AsyncMock()) as mock_connect:
+            await mgr.connect()
+        cfg = mock_connect.call_args.kwargs["http_connect_proxy_config"]
+        assert cfg.target_host == "127.0.0.1:8080"
+
+
+class TestServerRootCA:
+    def test_unset_keeps_default_roots(self, monkeypatch):
+        monkeypatch.delenv("TEMPORAL_TLS_SERVER_ROOT_CA", raising=False)
+        tls = TemporalClientManager(api_key="my-secret-key")._determine_tls_config()
+        assert tls.server_root_ca_cert is None
+
+    def test_bundle_is_read_into_every_tls_config(self, monkeypatch, tmp_path):
+        bundle = tmp_path / "ca.pem"
+        bundle.write_bytes(b"-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n")
+        monkeypatch.setenv("TEMPORAL_TLS_SERVER_ROOT_CA", str(bundle))
+        tls = TemporalClientManager(api_key="my-secret-key")._determine_tls_config()
+        assert tls.server_root_ca_cert == bundle.read_bytes()
+        tls = TemporalClientManager(temporal_host="remote.example:7233")._determine_tls_config()
+        assert tls.server_root_ca_cert == bundle.read_bytes()

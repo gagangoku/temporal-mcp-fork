@@ -1,5 +1,5 @@
 # Temporal SDK
-temporalio>=1.5.0
+temporalio>=1.7.0
 
 # Model Context Protocol
 # Keep the tested 2.0/2.1 SDK API: 2.2 changes protocol model wrappers.
